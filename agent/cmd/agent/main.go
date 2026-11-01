@@ -9,14 +9,16 @@ import (
 
 	"gpu-pool/agent/internal/gpu"
 	"gpu-pool/agent/internal/identity"
+	"gpu-pool/agent/internal/monitor"
 )
 
 // AgentSnapshot 表示 Worker Agent 当前节点状态。
 type AgentSnapshot struct {
-	NodeID      string        `json:"node_id"`
-	Hostname    string        `json:"hostname"`
-	CollectedAt time.Time     `json:"collected_at"`
-	GPUs        []gpu.GPUInfo `json:"gpus"`
+	NodeID      string             `json:"node_id"`
+	Hostname    string             `json:"hostname"`
+	CollectedAt time.Time          `json:"collected_at"`
+	System      monitor.SystemInfo `json:"system"`
+	GPUs        []gpu.GPUInfo      `json:"gpus"`
 }
 
 // getIdentityPath 获取节点身份文件路径。
@@ -61,15 +63,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 6. 组合完整节点信息。
+	// 6. 采集系统资源信息。
+	systemInfo, err := monitor.CollectSystemInfo()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "System collection failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	// 7. 组合完整节点信息。
 	snapshot := AgentSnapshot{
 		NodeID:      nodeIdentity.NodeID,
 		Hostname:    hostname,
 		CollectedAt: time.Now().UTC(),
+		System:      *systemInfo,
 		GPUs:        gpus,
 	}
 
-	// 7. 输出 JSON。
+	// 8. 输出 JSON。
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
 

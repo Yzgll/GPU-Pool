@@ -1,18 +1,24 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 	"time"
 
+	"gpu-pool/agent/internal/config"
+	"gpu-pool/agent/internal/executor"
 	"gpu-pool/agent/internal/gpu"
 	"gpu-pool/agent/internal/identity"
 	"gpu-pool/agent/internal/monitor"
 )
 
-// AgentSnapshot 表示 Worker Agent 当前节点状态。
+// AgentSnapshot represents the current worker node state.
 type AgentSnapshot struct {
 	NodeID      string             `json:"node_id"`
 	Hostname    string             `json:"hostname"`
@@ -21,70 +27,102 @@ type AgentSnapshot struct {
 	GPUs        []gpu.GPUInfo      `json:"gpus"`
 }
 
-// getIdentityPath 获取节点身份文件路径。
-func getIdentityPath() (string, error) {
-	configDir, err := os.UserConfigDir()
-	if err != nil {
-		return "", fmt.Errorf("get user config directory: %w", err)
-	}
-
-	return filepath.Join(configDir, "gpu-pool", "node.json"), nil
-}
+const configPath = `E:\GPU-Pool-Data\config.yaml`
 
 func main() {
-	// 1. 获取本机节点身份文件路径。
-	identityPath, err := getIdentityPath()
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+
+	// 1. Load configuration.
+	cfg, err := config.Load(configPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Identity path error: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("Config loading failed: %v", err)
 	}
 
-	// 2. 加载或创建节点身份。
+	// 2. Create model cache directory.
+	if err := os.MkdirAll(cfg.Storage.ModelCacheDir, 0755); err != nil {
+		log.Fatalf("Create model cache directory failed: %v", err)
+	}
+
+	// 3. Load or create persistent node identity.
+	identityPath := filepath.Join(cfg.Agent.DataDir, "node.json")
+
 	nodeIdentity, err := identity.LoadOrCreate(identityPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Identity initialization failed: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("Identity initialization failed: %v", err)
 	}
 
-	// 3. 获取本机主机名。
+	// 4. Get hostname.
 	hostname, err := os.Hostname()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Get hostname failed: %v\n", err)
-		os.Exit(1)
+		log.Fatalf("Get hostname failed: %v", err)
 	}
 
-	// 4. 创建 NVIDIA GPU 采集器。
+	if cfg.Agent.NodeName != "" {
+		hostname = cfg.Agent.NodeName
+	}
+
+	// 5. Initialize GPU collector.
 	collector := gpu.NewNVIDIACollector()
 
-	// 5. 采集 GPU 信息。
-	gpus, err := collector.Collect()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "GPU collection failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	// 6. 采集系统资源信息。
-	systemInfo, err := monitor.CollectSystemInfo()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "System collection failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	// 7. 组合完整节点信息。
-	snapshot := AgentSnapshot{
-		NodeID:      nodeIdentity.NodeID,
-		Hostname:    hostname,
-		CollectedAt: time.Now().UTC(),
-		System:      *systemInfo,
-		GPUs:        gpus,
-	}
-
-	// 8. 输出 JSON。
+	// 6. Prepare JSON encoder.
 	encoder := json.NewEncoder(os.Stdout)
 	encoder.SetIndent("", "  ")
 
-	if err := encoder.Encode(snapshot); err != nil {
-		fmt.Fprintf(os.Stderr, "JSON encoding failed: %v\n", err)
+	// 7. Define one resource collection operation.
+	collect := func() error {
+		// Collect GPU information.
+		gpus, err := collector.Collect()
+		if err != nil {
+			return fmt.Errorf("GPU collection failed: %w", err)
+		}
+
+		// Collect system information.
+		systemInfo, err := monitor.CollectSystemInfo()
+		if err != nil {
+			return fmt.Errorf("system collection failed: %w", err)
+		}
+
+		// Build resource snapshot.
+		snapshot := AgentSnapshot{
+			NodeID:      nodeIdentity.NodeID,
+			Hostname:    hostname,
+			CollectedAt: time.Now().UTC(),
+			System:      *systemInfo,
+			GPUs:        gpus,
+		}
+
+		// Output JSON snapshot.
+		if err := encoder.Encode(snapshot); err != nil {
+			return fmt.Errorf("JSON encoding failed: %w", err)
+		}
+
+		return nil
+	}
+
+	// 8. Handle Ctrl+C and termination signals.
+	ctx, stop := signal.NotifyContext(
+		context.Background(),
+		os.Interrupt,
+		syscall.SIGTERM,
+	)
+	defer stop()
+
+	log.Printf("GPU-Pool Worker Agent started")
+	log.Printf("Node ID: %s", nodeIdentity.NodeID)
+	log.Printf("Hostname: %s", hostname)
+	log.Printf("Coordinator: %s", cfg.Coordinator.Endpoint)
+	log.Printf("Collection interval: %s", cfg.Monitor.CollectionInterval)
+	log.Printf("Data directory: %s", cfg.Agent.DataDir)
+
+	// 9. Start periodic resource collection.
+	if err := executor.Run(
+		ctx,
+		cfg.Monitor.CollectionInterval,
+		collect,
+	); err != nil {
+		log.Printf("Agent execution failed: %v", err)
 		os.Exit(1)
 	}
+
+	log.Printf("GPU-Pool Worker Agent stopped gracefully")
 }

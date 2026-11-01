@@ -2,7 +2,10 @@ module gpu-pool/agent
 
 go 1.26.0
 
-require github.com/shirou/gopsutil/v4 v4.26.10
+require (
+	github.com/shirou/gopsutil/v4 v4.26.10
+	gopkg.in/yaml.v3 v3.0.1
+)
 
 require (
 	github.com/ebitengine/purego v0.11.2 // indirect

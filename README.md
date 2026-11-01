@@ -1,4 +1,4 @@
-﻿# Friends GPU Pool
+GPU Pool
 
 私有 GPU 算力共享平台。
 

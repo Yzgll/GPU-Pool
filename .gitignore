@@ -1,0 +1,36 @@
+﻿# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Go
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+/bin/
+/vendor/
+
+# Node
+node_modules/
+dist/
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+
+# OS
+Thumbs.db
+.DS_Store

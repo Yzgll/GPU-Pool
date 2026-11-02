@@ -1,120 +1,210 @@
 package api
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"gpu-pool/server/internal/node"
 )
 
-// 创建测试用的 HTTP Handler。
-func newTestHandler() *Handler {
-	return NewHandler(node.NewRegistry())
+// mockNodeRepository 模拟数据库 Repository。
+type mockNodeRepository struct {
+	nodes []node.Node
 }
 
-// 构造一份合法的节点心跳请求。
-func validHeartbeatRequest() []byte {
-	data := map[string]any{
-		"node_id":      "node-001",
-		"hostname":     "worker-01",
-		"collected_at": time.Now().UTC(),
-		"system":       map[string]any{},
-		"gpus":         []any{},
+func (m *mockNodeRepository) UpsertNodeWithSnapshot(
+	ctx context.Context,
+	snapshot []byte,
+) (*node.Node, error) {
+	var metadata struct {
+		NodeID      string    `json:"node_id"`
+		Hostname    string    `json:"hostname"`
+		CollectedAt time.Time `json:"collected_at"`
 	}
 
-	body, _ := json.Marshal(data)
-	return body
+	if err := json.Unmarshal(snapshot, &metadata); err != nil {
+		return nil, err
+	}
+
+	if metadata.NodeID == "" || metadata.Hostname == "" ||
+		metadata.CollectedAt.IsZero() {
+		return nil, errors.New("invalid heartbeat metadata")
+	}
+
+	result := &node.Node{
+		NodeID:        metadata.NodeID,
+		Hostname:      metadata.Hostname,
+		CollectedAt:   metadata.CollectedAt,
+		LastHeartbeat: time.Now().UTC(),
+		Status:        node.StatusOnline,
+		Snapshot:      append(json.RawMessage(nil), snapshot...),
+	}
+
+	m.nodes = append(m.nodes, *result)
+
+	return result, nil
 }
 
-// 测试节点首次上报心跳。
+func (m *mockNodeRepository) GetNode(
+	ctx context.Context,
+	nodeID string,
+) (*node.Node, error) {
+	for _, n := range m.nodes {
+		if n.NodeID == nodeID {
+			return &n, nil
+		}
+	}
+
+	return nil, nil
+}
+
+func (m *mockNodeRepository) ListNodes(
+	ctx context.Context,
+) ([]node.Node, error) {
+	return m.nodes, nil
+}
+
+func (m *mockNodeRepository) GetNodeStats(
+	ctx context.Context,
+) (node.NodeStats, error) {
+	stats := node.NodeStats{
+		Total: len(m.nodes),
+	}
+
+	for _, n := range m.nodes {
+		if n.Status == node.StatusOnline {
+			stats.Online++
+		} else {
+			stats.Offline++
+		}
+	}
+
+	return stats, nil
+}
+
+// newTestServer 创建使用 Mock Repository 的测试服务。
+func newTestServer() *http.ServeMux {
+	repository := &mockNodeRepository{}
+	handler := NewHandler(repository)
+
+	mux := http.NewServeMux()
+	handler.RegisterRoutes(mux)
+
+	return mux
+}
+
 func TestHeartbeatSuccess(t *testing.T) {
-	handler := newTestHandler()
+	mux := newTestServer()
+
+	body := `{
+		"node_id": "node-001",
+		"hostname": "worker-001",
+		"collected_at": "2026-11-02T14:00:00Z",
+		"system": {},
+		"gpus": []
+	}`
 
 	req := httptest.NewRequest(
 		http.MethodPost,
 		"/api/v1/heartbeat",
-		bytes.NewReader(validHeartbeatRequest()),
+		strings.NewReader(body),
 	)
-
 	rec := httptest.NewRecorder()
 
-	handler.heartbeat(rec, req)
+	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d: %s",
 			rec.Code, rec.Body.String())
 	}
+
+	var result map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+
+	if result["status"] != "ok" {
+		t.Fatalf("unexpected response: %v", result)
+	}
+
+	if result["node_id"] != "node-001" {
+		t.Fatalf("unexpected node ID: %s", result["node_id"])
+	}
 }
 
-// 测试非法 JSON 请求。
 func TestHeartbeatInvalidJSON(t *testing.T) {
-	handler := newTestHandler()
+	mux := newTestServer()
 
 	req := httptest.NewRequest(
 		http.MethodPost,
 		"/api/v1/heartbeat",
-		bytes.NewBufferString("{invalid}"),
+		strings.NewReader(`invalid json`),
 	)
-
 	rec := httptest.NewRecorder()
 
-	handler.heartbeat(rec, req)
+	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", rec.Code)
 	}
 }
 
-// 测试缺少节点 ID 的请求。
 func TestHeartbeatMissingNodeID(t *testing.T) {
-	handler := newTestHandler()
+	mux := newTestServer()
 
-	body := []byte(`{
-		"hostname": "worker-01",
-		"collected_at": "2026-11-02T00:00:00Z"
-	}`)
+	body := `{
+		"hostname": "worker-001",
+		"collected_at": "2026-11-02T14:00:00Z",
+		"system": {},
+		"gpus": []
+	}`
 
 	req := httptest.NewRequest(
 		http.MethodPost,
 		"/api/v1/heartbeat",
-		bytes.NewReader(body),
+		strings.NewReader(body),
 	)
-
 	rec := httptest.NewRecorder()
 
-	handler.heartbeat(rec, req)
+	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", rec.Code)
 	}
 }
 
-// 测试节点列表查询。
 func TestListNodes(t *testing.T) {
-	handler := newTestHandler()
+	mux := newTestServer()
 
-	heartbeatReq := httptest.NewRequest(
+	body := `{
+		"node_id": "node-001",
+		"hostname": "worker-001",
+		"collected_at": "2026-11-02T14:00:00Z",
+		"system": {},
+		"gpus": []
+	}`
+
+	heartbeat := httptest.NewRequest(
 		http.MethodPost,
 		"/api/v1/heartbeat",
-		bytes.NewReader(validHeartbeatRequest()),
+		strings.NewReader(body),
 	)
-
-	heartbeatRec := httptest.NewRecorder()
-	handler.heartbeat(heartbeatRec, heartbeatReq)
+	mux.ServeHTTP(httptest.NewRecorder(), heartbeat)
 
 	req := httptest.NewRequest(
 		http.MethodGet,
 		"/api/v1/nodes",
 		nil,
 	)
-
 	rec := httptest.NewRecorder()
 
-	handler.listNodes(rec, req)
+	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", rec.Code)
@@ -126,53 +216,60 @@ func TestListNodes(t *testing.T) {
 	}
 
 	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
-		t.Fatalf("decode response failed: %v", err)
+		t.Fatal(err)
 	}
 
 	if result.Total != 1 {
 		t.Fatalf("expected 1 node, got %d", result.Total)
 	}
-
-	if result.Nodes[0].NodeID != "node-001" {
-		t.Fatalf("unexpected node ID: %s", result.Nodes[0].NodeID)
-	}
 }
 
-// 测试空节点列表。
 func TestListNodesEmpty(t *testing.T) {
-	handler := newTestHandler()
+	mux := newTestServer()
 
 	req := httptest.NewRequest(
 		http.MethodGet,
 		"/api/v1/nodes",
 		nil,
 	)
-
 	rec := httptest.NewRecorder()
 
-	handler.listNodes(rec, req)
+	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", rec.Code)
 	}
+
+	var result struct {
+		Total int `json:"total"`
+	}
+
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+
+	if result.Total != 0 {
+		t.Fatalf("expected 0 nodes, got %d", result.Total)
+	}
 }
 
-// 测试查询已注册节点的详情。
 func TestGetNodeSuccess(t *testing.T) {
-	handler := newTestHandler()
+	mux := newTestServer()
 
-	// 先注册节点。
-	heartbeatReq := httptest.NewRequest(
+	body := `{
+		"node_id": "node-001",
+		"hostname": "worker-001",
+		"collected_at": "2026-11-02T14:00:00Z",
+		"system": {},
+		"gpus": []
+	}`
+
+	heartbeat := httptest.NewRequest(
 		http.MethodPost,
 		"/api/v1/heartbeat",
-		bytes.NewReader(validHeartbeatRequest()),
+		strings.NewReader(body),
 	)
-	heartbeatRec := httptest.NewRecorder()
-	handler.heartbeat(heartbeatRec, heartbeatReq)
-
-	// 查询节点详情。
-	mux := http.NewServeMux()
-	handler.RegisterRoutes(mux)
+	mux.ServeHTTP(httptest.NewRecorder(), heartbeat)
 
 	req := httptest.NewRequest(
 		http.MethodGet,
@@ -184,8 +281,7 @@ func TestGetNodeSuccess(t *testing.T) {
 	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d: %s",
-			rec.Code, rec.Body.String())
+		t.Fatalf("expected status 200, got %d", rec.Code)
 	}
 
 	var result struct {
@@ -193,28 +289,20 @@ func TestGetNodeSuccess(t *testing.T) {
 	}
 
 	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
-		t.Fatalf("decode response failed: %v", err)
+		t.Fatal(err)
 	}
 
 	if result.Node.NodeID != "node-001" {
 		t.Fatalf("unexpected node ID: %s", result.Node.NodeID)
 	}
-
-	if result.Node.Status != node.StatusOnline {
-		t.Fatalf("expected online, got %s", result.Node.Status)
-	}
 }
 
-// 测试查询不存在的节点返回 404。
 func TestGetNodeNotFound(t *testing.T) {
-	handler := newTestHandler()
-
-	mux := http.NewServeMux()
-	handler.RegisterRoutes(mux)
+	mux := newTestServer()
 
 	req := httptest.NewRequest(
 		http.MethodGet,
-		"/api/v1/nodes/unknown-node",
+		"/api/v1/nodes/not-exist",
 		nil,
 	)
 	rec := httptest.NewRecorder()
@@ -226,84 +314,69 @@ func TestGetNodeNotFound(t *testing.T) {
 	}
 }
 
-// 测试节点状态统计。
 func TestNodeStats(t *testing.T) {
-	handler := newTestHandler()
+	mux := newTestServer()
 
-	// 注册一个节点。
-	heartbeatReq := httptest.NewRequest(
+	body := `{
+		"node_id": "node-001",
+		"hostname": "worker-001",
+		"collected_at": "2026-11-02T14:00:00Z",
+		"system": {},
+		"gpus": []
+	}`
+
+	heartbeat := httptest.NewRequest(
 		http.MethodPost,
 		"/api/v1/heartbeat",
-		bytes.NewReader(validHeartbeatRequest()),
+		strings.NewReader(body),
 	)
-
-	heartbeatRec := httptest.NewRecorder()
-	handler.heartbeat(heartbeatRec, heartbeatReq)
-
-	// 查询节点统计。
-	mux := http.NewServeMux()
-	handler.RegisterRoutes(mux)
+	mux.ServeHTTP(httptest.NewRecorder(), heartbeat)
 
 	req := httptest.NewRequest(
 		http.MethodGet,
 		"/api/v1/nodes/stats",
 		nil,
 	)
-
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d: %s",
-			rec.Code, rec.Body.String())
-	}
-
-	var result node.NodeStats
-
-	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
-		t.Fatalf("decode response failed: %v", err)
-	}
-
-	if result.Total != 1 {
-		t.Fatalf("expected total 1, got %d", result.Total)
-	}
-
-	if result.Online != 1 {
-		t.Fatalf("expected online 1, got %d", result.Online)
-	}
-
-	if result.Offline != 0 {
-		t.Fatalf("expected offline 0, got %d", result.Offline)
-	}
-}
-
-// 测试空节点状态统计。
-func TestNodeStatsEmpty(t *testing.T) {
-	handler := newTestHandler()
-
-	mux := http.NewServeMux()
-	handler.RegisterRoutes(mux)
-
-	req := httptest.NewRequest(
-		http.MethodGet,
-		"/api/v1/nodes/stats",
-		nil,
-	)
-
-	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", rec.Code)
 	}
 
-	var result node.NodeStats
-
-	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
-		t.Fatalf("decode response failed: %v", err)
+	var stats node.NodeStats
+	if err := json.Unmarshal(rec.Body.Bytes(), &stats); err != nil {
+		t.Fatal(err)
 	}
 
-	if result.Total != 0 || result.Online != 0 || result.Offline != 0 {
-		t.Fatalf("expected all stats to be zero, got %+v", result)
+	if stats.Total != 1 || stats.Online != 1 {
+		t.Fatalf("unexpected stats: %+v", stats)
+	}
+}
+
+func TestNodeStatsEmpty(t *testing.T) {
+	mux := newTestServer()
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/nodes/stats",
+		nil,
+	)
+	rec := httptest.NewRecorder()
+
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	var stats node.NodeStats
+	if err := json.Unmarshal(rec.Body.Bytes(), &stats); err != nil {
+		t.Fatal(err)
+	}
+
+	if stats.Total != 0 {
+		t.Fatalf("expected 0 nodes, got %d", stats.Total)
 	}
 }

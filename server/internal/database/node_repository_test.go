@@ -158,8 +158,120 @@ func TestNodeRepositoryIntegration(t *testing.T) {
 	if snapshotCount != 2 {
 		t.Fatalf("expected 2 snapshots, got %d", snapshotCount)
 	}
+	// 6. 测试资源历史分页查询。
+	history, err := repo.GetResourceHistory(
+		ctx,
+		"test-node-001",
+		nil,
+		nil,
+		1,
+		0,
+	)
+	if err != nil {
+		t.Fatalf("get resource history failed: %v", err)
+	}
 
-	// 6. 验证离线判定。
+	if history.Total != 2 {
+		t.Fatalf("expected 2 history records, got %d", history.Total)
+	}
+
+	if len(history.Records) != 1 {
+		t.Fatalf("expected 1 history record, got %d", len(history.Records))
+	}
+
+	// 验证倒序排列，第一页应该是最新记录。
+	if !history.Records[0].CollectedAt.Equal(
+		time.Date(2026, 11, 2, 14, 0, 10, 0, time.UTC),
+	) {
+		t.Fatalf("unexpected latest history time: %v",
+			history.Records[0].CollectedAt)
+	}
+
+	// 7. 测试分页第二页。
+	history, err = repo.GetResourceHistory(
+		ctx,
+		"test-node-001",
+		nil,
+		nil,
+		1,
+		1,
+	)
+	if err != nil {
+		t.Fatalf("get second history page failed: %v", err)
+	}
+
+	if len(history.Records) != 1 {
+		t.Fatalf("expected 1 record on second page, got %d",
+			len(history.Records))
+	}
+
+	// 8. 测试时间范围查询。
+	from := time.Date(2026, 11, 2, 14, 0, 5, 0, time.UTC)
+	to := time.Date(2026, 11, 2, 14, 0, 15, 0, time.UTC)
+
+	history, err = repo.GetResourceHistory(
+		ctx,
+		"test-node-001",
+		&from,
+		&to,
+		10,
+		0,
+	)
+	if err != nil {
+		t.Fatalf("get history by time range failed: %v", err)
+	}
+
+	if history.Total != 1 {
+		t.Fatalf("expected 1 record in time range, got %d",
+			history.Total)
+	}
+
+	// 9. 测试查询最新资源快照。
+	latest, err := repo.GetLatestResourceSnapshot(
+		ctx,
+		"test-node-001",
+	)
+	if err != nil {
+		t.Fatalf("get latest snapshot failed: %v", err)
+	}
+
+	if latest == nil {
+		t.Fatal("expected latest snapshot, got nil")
+	}
+
+	if !latest.CollectedAt.Equal(
+		time.Date(2026, 11, 2, 14, 0, 10, 0, time.UTC),
+	) {
+		t.Fatalf("unexpected latest snapshot time: %v",
+			latest.CollectedAt)
+	}
+
+	// 10. 测试不存在历史记录的节点。
+	empty, err := repo.GetLatestResourceSnapshot(
+		ctx,
+		"non-existent-node",
+	)
+	if err != nil {
+		t.Fatalf("unexpected error for missing snapshot: %v", err)
+	}
+
+	if empty != nil {
+		t.Fatal("expected nil snapshot for non-existent node")
+	}
+
+	// 11. 测试非法分页参数。
+	_, err = repo.GetResourceHistory(
+		ctx,
+		"test-node-001",
+		nil,
+		nil,
+		0,
+		0,
+	)
+	if err == nil {
+		t.Fatal("expected error for invalid limit")
+	}
+	// 12. 验证离线判定。
 	_, err = pool.Exec(ctx, `
 		UPDATE nodes
 		SET last_heartbeat = NOW() - INTERVAL '60 seconds'

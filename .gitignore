@@ -34,3 +34,6 @@ temp/
 # OS
 Thumbs.db
 .DS_Store
+
+# Go build artifacts
+server/bin/

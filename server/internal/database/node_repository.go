@@ -290,11 +290,16 @@ func (r *NodeRepository) UpsertNodeWithSnapshot(
 		CollectedAt time.Time       `json:"collected_at"`
 		System      json.RawMessage `json:"system"`
 		GPUs        []struct {
-			Index         int    `json:"index"`
-			UUID          string `json:"uuid"`
-			Name          string `json:"name"`
-			MemoryTotalMB uint64 `json:"memory_total_mb"`
-			DriverVersion string `json:"driver_version"`
+			Index         int     `json:"index"`
+			UUID          string  `json:"uuid"`
+			Name          string  `json:"name"`
+			MemoryTotalMB uint64  `json:"memory_total_mb"`
+			MemoryUsedMB  uint64  `json:"memory_used_mb"`
+			MemoryFreeMB  uint64  `json:"memory_free_mb"`
+			Utilization   uint32  `json:"utilization"`
+			Temperature   uint32  `json:"temperature"`
+			PowerW        float64 `json:"power_w"`
+			DriverVersion string  `json:"driver_version"`
 		} `json:"gpus"`
 	}
 

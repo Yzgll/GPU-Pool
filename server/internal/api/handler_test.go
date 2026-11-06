@@ -25,6 +25,12 @@ type mockNodeRepository struct {
 	gpusErr       error
 	gpuHistory    *node.GPUHistoryResult
 	gpuHistoryErr error
+	// 资源池测试数据
+	pools      []node.Pool
+	poolNodes  []node.PoolNode
+	nextPoolID int64
+	poolStats  map[int64]node.PoolStats
+	poolErr    error
 }
 
 func (m *mockNodeRepository) UpsertNodeWithSnapshot(
@@ -170,6 +176,331 @@ func (m *mockNodeRepository) GetGPUsByNode(
 	}
 
 	return result, nil
+}
+
+// CreatePool 模拟创建资源池。
+func (m *mockNodeRepository) CreatePool(
+	ctx context.Context,
+	name string,
+	description string,
+) (*node.Pool, error) {
+	if m.poolErr != nil {
+		return nil, m.poolErr
+	}
+
+	for _, p := range m.pools {
+		if p.Name == name {
+			return nil, errors.New("resource pool name already exists")
+		}
+	}
+
+	m.nextPoolID++
+
+	pool := node.Pool{
+		PoolID:      m.nextPoolID,
+		Name:        name,
+		Description: description,
+		Status:      "active",
+		CreatedAt:   time.Now().UTC(),
+		UpdatedAt:   time.Now().UTC(),
+	}
+
+	m.pools = append(m.pools, pool)
+
+	return &pool, nil
+}
+
+// ListPools 模拟查询资源池列表。
+func (m *mockNodeRepository) ListPools(
+	ctx context.Context,
+) ([]node.Pool, error) {
+	if m.poolErr != nil {
+		return nil, m.poolErr
+	}
+
+	result := make([]node.Pool, len(m.pools))
+
+	copy(result, m.pools)
+
+	for i := range result {
+		result[i].NodeCount = 0
+
+		for _, pn := range m.poolNodes {
+			if pn.PoolID == result[i].PoolID {
+				result[i].NodeCount++
+			}
+		}
+	}
+
+	return result, nil
+}
+
+// GetPool 模拟查询资源池详情。
+func (m *mockNodeRepository) GetPool(
+	ctx context.Context,
+	poolID int64,
+) (*node.Pool, error) {
+	if m.poolErr != nil {
+		return nil, m.poolErr
+	}
+
+	for _, p := range m.pools {
+		if p.PoolID == poolID {
+			result := p
+
+			for _, pn := range m.poolNodes {
+				if pn.PoolID == poolID {
+					result.NodeCount++
+				}
+			}
+
+			return &result, nil
+		}
+	}
+
+	return nil, nil
+}
+
+// UpdatePool 模拟修改资源池信息。
+func (m *mockNodeRepository) UpdatePool(
+	ctx context.Context,
+	poolID int64,
+	name string,
+	description string,
+) error {
+	if m.poolErr != nil {
+		return m.poolErr
+	}
+
+	for _, p := range m.pools {
+		if p.Name == name && p.PoolID != poolID {
+			return errors.New("resource pool name already exists")
+		}
+	}
+
+	for i := range m.pools {
+		if m.pools[i].PoolID == poolID {
+			m.pools[i].Name = name
+			m.pools[i].Description = description
+			m.pools[i].UpdatedAt = time.Now().UTC()
+			return nil
+		}
+	}
+
+	return errors.New("resource pool not found")
+}
+
+// SetPoolStatus 模拟修改资源池状态。
+func (m *mockNodeRepository) SetPoolStatus(
+	ctx context.Context,
+	poolID int64,
+	status string,
+) error {
+	if m.poolErr != nil {
+		return m.poolErr
+	}
+
+	if status != "active" && status != "disabled" {
+		return errors.New("invalid pool status")
+	}
+
+	for i := range m.pools {
+		if m.pools[i].PoolID == poolID {
+			m.pools[i].Status = status
+			m.pools[i].UpdatedAt = time.Now().UTC()
+			return nil
+		}
+	}
+
+	return errors.New("resource pool not found")
+}
+
+// DeletePool 模拟删除资源池。
+func (m *mockNodeRepository) DeletePool(
+	ctx context.Context,
+	poolID int64,
+) error {
+	if m.poolErr != nil {
+		return m.poolErr
+	}
+
+	found := false
+
+	for i := range m.pools {
+		if m.pools[i].PoolID == poolID {
+			m.pools = append(m.pools[:i], m.pools[i+1:]...)
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		return errors.New("resource pool not found")
+	}
+
+	// 删除资源池时只解除节点关联，不删除节点。
+	result := make([]node.PoolNode, 0)
+
+	for _, pn := range m.poolNodes {
+		if pn.PoolID != poolID {
+			result = append(result, pn)
+		}
+	}
+
+	m.poolNodes = result
+
+	return nil
+}
+
+// AddNodeToPool 模拟向资源池添加节点。
+func (m *mockNodeRepository) AddNodeToPool(
+	ctx context.Context,
+	poolID int64,
+	nodeID string,
+) error {
+	if m.poolErr != nil {
+		return m.poolErr
+	}
+
+	var pool *node.Pool
+
+	for i := range m.pools {
+		if m.pools[i].PoolID == poolID {
+			pool = &m.pools[i]
+			break
+		}
+	}
+
+	if pool == nil {
+		return errors.New("resource pool not found")
+	}
+
+	if pool.Status != "active" {
+		return errors.New("resource pool is disabled")
+	}
+
+	var target *node.Node
+
+	for i := range m.nodes {
+		if m.nodes[i].NodeID == nodeID {
+			target = &m.nodes[i]
+			break
+		}
+	}
+
+	if target == nil {
+		return errors.New("node not found")
+	}
+
+	if target.Status != node.StatusOnline {
+		return errors.New("node is offline")
+	}
+
+	for _, pn := range m.poolNodes {
+		if pn.NodeID == nodeID {
+			return errors.New("node already belongs to a resource pool")
+		}
+	}
+
+	m.poolNodes = append(m.poolNodes, node.PoolNode{
+		PoolID:   poolID,
+		NodeID:   nodeID,
+		Hostname: target.Hostname,
+		JoinedAt: time.Now().UTC(),
+	})
+
+	return nil
+}
+
+// RemoveNodeFromPool 模拟从资源池移除节点。
+func (m *mockNodeRepository) RemoveNodeFromPool(
+	ctx context.Context,
+	poolID int64,
+	nodeID string,
+) error {
+	if m.poolErr != nil {
+		return m.poolErr
+	}
+
+	for i, pn := range m.poolNodes {
+		if pn.PoolID == poolID && pn.NodeID == nodeID {
+			m.poolNodes = append(
+				m.poolNodes[:i],
+				m.poolNodes[i+1:]...,
+			)
+			return nil
+		}
+	}
+
+	return errors.New("node is not in this resource pool")
+}
+
+// ListPoolNodes 模拟查询资源池节点。
+func (m *mockNodeRepository) ListPoolNodes(
+	ctx context.Context,
+	poolID int64,
+) ([]node.PoolNode, error) {
+	if m.poolErr != nil {
+		return nil, m.poolErr
+	}
+
+	result := make([]node.PoolNode, 0)
+
+	for _, pn := range m.poolNodes {
+		if pn.PoolID == poolID {
+			result = append(result, pn)
+		}
+	}
+
+	return result, nil
+}
+
+// GetPoolStats 模拟查询资源池 GPU 资源统计。
+func (m *mockNodeRepository) GetPoolStats(
+	ctx context.Context,
+	poolID int64,
+) (*node.PoolStats, error) {
+	if m.poolErr != nil {
+		return nil, m.poolErr
+	}
+
+	exists := false
+
+	for _, p := range m.pools {
+		if p.PoolID == poolID {
+			exists = true
+			break
+		}
+	}
+
+	if !exists {
+		return nil, nil
+	}
+
+	stats := &node.PoolStats{
+		PoolID: poolID,
+	}
+
+	for _, pn := range m.poolNodes {
+		if pn.PoolID != poolID {
+			continue
+		}
+
+		stats.NodeCount++
+
+		for _, gpu := range m.gpus {
+			if gpu.NodeID != pn.NodeID {
+				continue
+			}
+
+			stats.GPUCount++
+			stats.MemoryTotalMB += gpu.MemoryTotalMB
+			stats.MemoryUsedMB += gpu.MemoryUsedMB
+			stats.MemoryFreeMB += gpu.MemoryFreeMB
+		}
+	}
+
+	return stats, nil
 }
 
 // newTestServer 创建使用 Mock Repository 的测试服务。

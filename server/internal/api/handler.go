@@ -12,7 +12,6 @@ import (
 )
 
 // NodeRepository 定义 API 所需的数据库操作。
-// NodeRepository 定义 API 所需的数据库操作。
 type NodeRepository interface {
 	UpsertNodeWithSnapshot(ctx context.Context, snapshot []byte) (*node.Node, error)
 	GetNode(ctx context.Context, nodeID string) (*node.Node, error)
@@ -32,6 +31,61 @@ type NodeRepository interface {
 		limit int,
 		offset int,
 	) (*node.GPUHistoryResult, error)
+	// 资源池管理。
+	CreatePool(
+		ctx context.Context,
+		name string,
+		description string,
+	) (*node.Pool, error)
+
+	ListPools(
+		ctx context.Context,
+	) ([]node.Pool, error)
+
+	GetPool(
+		ctx context.Context,
+		poolID int64,
+	) (*node.Pool, error)
+
+	UpdatePool(
+		ctx context.Context,
+		poolID int64,
+		name string,
+		description string,
+	) error
+
+	SetPoolStatus(
+		ctx context.Context,
+		poolID int64,
+		status string,
+	) error
+
+	DeletePool(
+		ctx context.Context,
+		poolID int64,
+	) error
+
+	AddNodeToPool(
+		ctx context.Context,
+		poolID int64,
+		nodeID string,
+	) error
+
+	RemoveNodeFromPool(
+		ctx context.Context,
+		poolID int64,
+		nodeID string,
+	) error
+
+	ListPoolNodes(
+		ctx context.Context,
+		poolID int64,
+	) ([]node.PoolNode, error)
+
+	GetPoolStats(
+		ctx context.Context,
+		poolID int64,
+	) (*node.PoolStats, error)
 }
 
 // Handler 负责处理 Coordinator HTTP 请求。
@@ -55,6 +109,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/gpus", h.listGPUs)
 	mux.HandleFunc("GET /api/v1/nodes/{node_id}/gpus", h.getNodeGPUs)
 	mux.HandleFunc("GET /api/v1/nodes/{node_id}/gpus/history", h.getGPUHistory)
+	h.registerPoolRoutes(mux)
 }
 
 // writeJSON 统一返回 JSON 响应。

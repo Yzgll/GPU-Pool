@@ -502,10 +502,34 @@ func (m *mockNodeRepository) GetPoolStats(
 
 	return stats, nil
 }
+func (m *mockNodeRepository) GetGPUCompareHistory(
+	ctx context.Context,
+	selected []node.GPUCompareDevice,
+	from time.Time,
+	to time.Time,
+	intervalSeconds int,
+) (*node.GPUCompareResult, error) {
+	return &node.GPUCompareResult{
+		IntervalSeconds: intervalSeconds,
+		Devices:         []node.GPUCompareDevice{},
+		Points:          []node.GPUComparePoint{},
+	}, nil
+}
 
 // newTestServer 创建使用 Mock Repository 的测试服务。
 func newTestServer() *http.ServeMux {
 	return newTestServerWithRepository(&mockNodeRepository{})
+}
+func (m *mockNodeRepository) GetGPUClusterHistory(
+	ctx context.Context,
+	from time.Time,
+	to time.Time,
+	intervalSeconds int,
+) (*node.GPUClusterHistoryResult, error) {
+	return &node.GPUClusterHistoryResult{
+		IntervalSeconds: intervalSeconds,
+		Points:          []node.GPUClusterHistoryPoint{},
+	}, nil
 }
 
 // newTestServerWithRepository 支持注入不同的 Mock 数据。

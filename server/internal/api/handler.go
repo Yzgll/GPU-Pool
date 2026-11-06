@@ -86,6 +86,19 @@ type NodeRepository interface {
 		ctx context.Context,
 		poolID int64,
 	) (*node.PoolStats, error)
+	GetGPUClusterHistory(
+		ctx context.Context,
+		from time.Time,
+		to time.Time,
+		intervalSeconds int,
+	) (*node.GPUClusterHistoryResult, error)
+	GetGPUCompareHistory(
+		ctx context.Context,
+		selected []node.GPUCompareDevice,
+		from time.Time,
+		to time.Time,
+		intervalSeconds int,
+	) (*node.GPUCompareResult, error)
 }
 
 // Handler 负责处理 Coordinator HTTP 请求。
@@ -110,6 +123,14 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/nodes/{node_id}/gpus", h.getNodeGPUs)
 	mux.HandleFunc("GET /api/v1/nodes/{node_id}/gpus/history", h.getGPUHistory)
 	h.registerPoolRoutes(mux)
+	mux.HandleFunc(
+		"GET /api/v1/gpus/history/summary",
+		h.getGPUClusterHistory,
+	)
+	mux.HandleFunc(
+		"GET /api/v1/gpus/history/compare",
+		h.getGPUCompareHistory,
+	)
 }
 
 // writeJSON 统一返回 JSON 响应。

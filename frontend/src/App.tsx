@@ -286,48 +286,52 @@ function App() {
               <div className="panel">
                 <h2>GPU 资源使用情况</h2>
 
-                {gpu ? (
-                  <div className="gpu-panel">
-                    <div
-                      className="utilization-circle"
-                      style={{
-                        background: `conic-gradient(#34df9a 0% ${gpu.utilization}%, #2b3952 ${gpu.utilization}% 100%)`,
-                      }}
-                    >
-                      <strong>{gpu.utilization}%</strong>
-                      <span>GPU 利用率</span>
-                    </div>
-
-                    <div className="gpu-details">
-                      <div className="gpu-name">{gpu.name}</div>
-                      <InfoRow
-                        label="显存使用"
-                        value={`${gpu.memory_used_mb} / ${gpu.memory_total_mb} MB`}
-                      />
-                      <div className="progress-track">
+                {gpus.length > 0 ? (
+                  <div className="gpu-panel-list">
+                    {gpus.map((gpu, index) => (
+                      <div className="gpu-panel" key={index}>
                         <div
-                          className="progress-fill"
+                          className="utilization-circle"
                           style={{
-                            width: `${Math.min(
-                              100,
-                              (gpu.memory_used_mb /
-                                Math.max(gpu.memory_total_mb, 1)) *
-                                100,
-                            )}%`,
+                            background: `conic-gradient(#34df9a 0% ${gpu.utilization}%, #2b3952 ${gpu.utilization}% 100%)`,
                           }}
-                        />
+                        >
+                          <strong>{gpu.utilization}%</strong>
+                          <span>GPU 利用率</span>
+                        </div>
+
+                        <div className="gpu-details">
+                          <div className="gpu-name">{gpu.name}</div>
+                          <InfoRow
+                            label="显存使用"
+                            value={`${gpu.memory_used_mb} / ${gpu.memory_total_mb} MB`}
+                          />
+                          <div className="progress-track">
+                            <div
+                              className="progress-fill"
+                              style={{
+                                width: `${Math.min(
+                                  100,
+                                  (gpu.memory_used_mb /
+                                    Math.max(gpu.memory_total_mb, 1)) *
+                                    100,
+                                )}%`,
+                              }}
+                            />
+                          </div>
+                          <InfoRow
+                            label="GPU 温度"
+                            value={`${gpu.temperature} °C`}
+                            icon={<Thermometer size={16} />}
+                          />
+                          <InfoRow
+                            label="GPU 功耗"
+                            value={`${gpu.power_w} W`}
+                            icon={<Zap size={16} />}
+                          />
+                        </div>
                       </div>
-                      <InfoRow
-                        label="GPU 温度"
-                        value={`${gpu.temperature} °C`}
-                        icon={<Thermometer size={16} />}
-                      />
-                      <InfoRow
-                        label="GPU 功耗"
-                        value={`${gpu.power_w} W`}
-                        icon={<Zap size={16} />}
-                      />
-                    </div>
+                    ))}
                   </div>
                 ) : (
                   <p className="empty-state">

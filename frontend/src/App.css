@@ -162,6 +162,12 @@
   font-size: 17px;
 }
 
+.gpu-panel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
 .gpu-panel {
   display: flex;
   align-items: center;

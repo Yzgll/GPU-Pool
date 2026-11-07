@@ -2,22 +2,43 @@ package main
 
 import (
 	"context"
+	"flag"
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"runtime"
 	"syscall"
 
 	"gpu-pool/agent/internal/agent"
 	"gpu-pool/agent/internal/config"
 )
 
-const configPath = `E:\GPU-Pool-Data\config.yaml`
+var configPath = flag.String(
+	"config",
+	defaultConfigPath(),
+	"Path to the Agent configuration file",
+)
+
+func defaultConfigPath() string {
+	if runtime.GOOS == "windows" {
+		return `E:\GPU-Pool-Data\config.yaml`
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "config.yaml"
+	}
+
+	return filepath.Join(home, "GPU-Pool-Data", "config.yaml")
+}
 
 func main() {
+	flag.Parse()
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 
 	// 1. 加载配置
-	cfg, err := config.Load(configPath)
+	cfg, err := config.Load(*configPath)
 	if err != nil {
 		log.Fatalf("Config loading failed: %v", err)
 	}

@@ -58,7 +58,10 @@ func New(cfg *config.Config) (*Agent, error) {
 		hostname = cfg.Agent.NodeName
 	}
 
-	gpuCollector := gpu.NewNVIDIACollector()
+	gpuCollector, err := gpu.NewCollector()
+	if err != nil {
+		return nil, fmt.Errorf("initialize GPU collector: %w", err)
+	}
 
 	collector := NewCollector(
 		nodeIdentity.NodeID,

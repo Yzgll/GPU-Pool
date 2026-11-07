@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -66,7 +67,16 @@ func DefaultConfig() Config {
 
 // defaultDataDir 返回当前用户的 GPU-Pool 数据目录。
 func defaultDataDir() string {
-	return `E:\GPU-Pool-Data`
+	if runtime.GOOS == "windows" {
+		return `E:\GPU-Pool-Data`
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(".", "GPU-Pool-Data")
+	}
+
+	return filepath.Join(home, "GPU-Pool-Data")
 }
 
 // Load 从 YAML 文件加载配置。

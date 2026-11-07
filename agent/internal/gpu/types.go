@@ -1,6 +1,6 @@
 package gpu
 
-// GPUInfo 描述一张 NVIDIA GPU 的硬件信息和实时状态。
+// GPUInfo describes a GPU device and its resource state.
 type GPUInfo struct {
 	Index         int     `json:"index"`
 	UUID          string  `json:"uuid"`
@@ -12,9 +12,19 @@ type GPUInfo struct {
 	Temperature   uint32  `json:"temperature"`
 	PowerW        float64 `json:"power_w"`
 	DriverVersion string  `json:"driver_version"`
+
+	// Cross-platform GPU metadata.
+	Vendor     string `json:"vendor,omitempty"`
+	Backend    string `json:"backend,omitempty"`
+	MemoryType string `json:"memory_type,omitempty"`
+
+	// Memory budget available for model allocation.
+	// This is not necessarily the same as free device memory.
+	MemoryAvailableMB    uint64 `json:"memory_available_mb,omitempty"`
+	MemoryAvailableKnown bool   `json:"memory_available_known"`
 }
 
-// GPUList 表示当前节点检测到的全部 GPU。
+// GPUList represents all GPUs detected on a node.
 type GPUList struct {
 	GPUs []GPUInfo `json:"gpus"`
 }

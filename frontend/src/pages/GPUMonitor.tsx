@@ -201,7 +201,9 @@ export default function GPUMonitor({ nodes }: Props) {
                       </td>
                       <td>
                         {device.nodeStatus === "online"
-                          ? `${device.gpu.temperature} °C`
+                          ? device.gpu.memory_type === "unified"
+                            ? "—"
+                            : `${device.gpu.temperature} °C`
                           : "—"}
                       </td>
                       <td>
@@ -253,7 +255,11 @@ export default function GPUMonitor({ nodes }: Props) {
 
                               <div className="gpu-monitor-stat">
                                 <span>GPU 温度</span>
-                                <strong>{device.gpu.temperature} °C</strong>
+                                <strong>
+                                  {device.gpu.memory_type === "unified"
+                                    ? "—"
+                                    : `${device.gpu.temperature} °C`}
+                                </strong>
                               </div>
 
                               <div className="gpu-monitor-stat">

@@ -151,3 +151,119 @@ func TestNormalizeAppleEnum(t *testing.T) {
 		}
 	}
 }
+
+func TestParsePowermetricsOutput(t *testing.T) {
+	input := `Machine model: MacBookPro18,3
+OS version: 15.0.1
+
+**** GPU usage ****
+GPU HW active frequency: 1296 MHz
+GPU HW active residency:  68.45% (1296 MHz:  68% 636 MHz:   0% 414 MHz:   0%)
+GPU SW requested state: (1296 MHz: 100% 636 MHz:   0% 414 MHz:   0%)
+GPU SW state: (1296 MHz: 100% 636 MHz:   0% 414 MHz:   0%)
+GPU idle residency:  31.55%
+GPU Power: 3.90 W
+`
+
+	utilization, powerW := parsePowermetricsOutput(input)
+
+	if utilization != 68 {
+		t.Errorf("expected utilization 68, got %d", utilization)
+	}
+
+	if powerW != 3.90 {
+		t.Errorf("expected power 3.90, got %f", powerW)
+	}
+}
+
+func TestParsePowermetricsOutputEmpty(t *testing.T) {
+	utilization, powerW := parsePowermetricsOutput("")
+
+	if utilization != 0 {
+		t.Errorf("expected utilization 0, got %d", utilization)
+	}
+
+	if powerW != 0 {
+		t.Errorf("expected power 0, got %f", powerW)
+	}
+}
+
+func TestParsePowermetricsOutputClampsOver100(t *testing.T) {
+	input := `GPU HW active residency: 123.45% (1296 MHz: 100%)
+GPU Power: 3.90 W
+`
+
+	utilization, _ := parsePowermetricsOutput(input)
+
+	if utilization != 100 {
+		t.Errorf("expected utilization clamped to 100, got %d", utilization)
+	}
+}
+
+func TestParsePercentAfterColon(t *testing.T) {
+	cases := []struct {
+		input string
+		want  float64
+	}{
+		{"GPU HW active residency:  68.45% (1296 MHz: 68%)", 68.45},
+		{"GPU HW active residency:  0.00%", 0},
+		{"GPU HW active residency:  100.0%", 100},
+		{"no colon here", -1},
+		{"no percent: 12.3", -1},
+	}
+
+	for _, c := range cases {
+		got := parsePercentAfterColon(c.input)
+		if got != c.want {
+			t.Errorf("parsePercentAfterColon(%q) = %f, want %f", c.input, got, c.want)
+		}
+	}
+}
+
+func TestParseWattAfterColon(t *testing.T) {
+	cases := []struct {
+		input string
+		want  float64
+	}{
+		{"GPU Power: 3.90 W", 3.90},
+		{"GPU Power: 0 W", 0},
+		{"GPU Power: 12.5 W", 12.5},
+		{"GPU Power: 28 mW", 0.028},
+		{"GPU Power: 500 mW", 0.5},
+		{"GPU Power: 1200 µW", 0.0012},
+		{"no colon", -1},
+		{"GPU Power:", -1},
+	}
+
+	for _, c := range cases {
+		got := parseWattAfterColon(c.input)
+		if got != c.want {
+			t.Errorf("parseWattAfterColon(%q) = %f, want %f", c.input, got, c.want)
+		}
+	}
+}
+
+func TestParsePowermetricsOutputRealM5(t *testing.T) {
+	// 基于 M5 Pro 真机 powermetrics 输出的真实片段，
+	// 验证 mW 单位能被正确转换为 W，利用率被四舍五入。
+	input := `Machine model: Mac17,8
+OS version: 25E246
+
+**** GPU usage ****
+
+GPU HW active frequency: 338 MHz
+GPU HW active residency:   5.02% (338 MHz: 5.0% 486 MHz:   0%)
+GPU idle residency:  94.98%
+GPU Power: 28 mW
+`
+
+	utilization, powerW := parsePowermetricsOutput(input)
+
+	if utilization != 5 {
+		t.Errorf("expected utilization 5, got %d", utilization)
+	}
+
+	if powerW != 0.028 {
+		t.Errorf("expected power 0.028 W, got %f", powerW)
+	}
+}

@@ -15,6 +15,7 @@ export type GPUDevice = {
     memory_total_mb: number;
     memory_used_mb: number;
     memory_free_mb: number;
+    memory_type?: string;
   };
 };
 
@@ -71,7 +72,11 @@ export default function GPUDetail({ device, onBack }: Props) {
 
           <div className="gpu-monitor-stat">
             <span>GPU 温度</span>
-            <strong>{gpu.temperature} °C</strong>
+            <strong>
+              {gpu.memory_type === "unified"
+                ? "—"
+                : `${gpu.temperature} °C`}
+            </strong>
           </div>
 
           <div className="gpu-monitor-stat">

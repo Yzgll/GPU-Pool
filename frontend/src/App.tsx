@@ -326,7 +326,11 @@ function App() {
                           </div>
                           <InfoRow
                             label="GPU 温度"
-                            value={`${gpu.temperature} °C`}
+                            value={
+                              gpu.memory_type === "unified"
+                                ? "—"
+                                : `${gpu.temperature} °C`
+                            }
                             icon={<Thermometer size={16} />}
                           />
                           <InfoRow
@@ -647,7 +651,11 @@ function App() {
                               />
                               <InfoRow
                                 label="温度"
-                                value={`${gpu.temperature} °C`}
+                                value={
+                                  gpu.memory_type === "unified"
+                                    ? "—"
+                                    : `${gpu.temperature} °C`
+                                }
                               />
                               <InfoRow
                                 label="功耗"

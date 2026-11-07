@@ -311,25 +311,19 @@ function App() {
                             }
                             value={`${gpu.memory_used_mb} / ${gpu.memory_total_mb} MB`}
                           />
-                          {gpu.memory_type === "unified" ? (
-                            <div className="unified-memory-note">
-                              统一内存，与 CPU 共享，无独立显存
-                            </div>
-                          ) : (
-                            <div className="progress-track">
-                              <div
-                                className="progress-fill"
-                                style={{
-                                  width: `${Math.min(
+                          <div className="progress-track">
+                            <div
+                              className="progress-fill"
+                              style={{
+                                width: `${Math.min(
+                                  100,
+                                  (gpu.memory_used_mb /
+                                    Math.max(gpu.memory_total_mb, 1)) *
                                     100,
-                                    (gpu.memory_used_mb /
-                                      Math.max(gpu.memory_total_mb, 1)) *
-                                      100,
-                                  )}%`,
-                                }}
-                              />
-                            </div>
-                          )}
+                                )}%`,
+                              }}
+                            />
+                          </div>
                           <InfoRow
                             label="GPU 温度"
                             value={`${gpu.temperature} °C`}

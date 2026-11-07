@@ -151,6 +151,13 @@ func parseNVIDIAOutput(output string) ([]GPUInfo, error) {
 			Temperature:   uint32(temperature),
 			PowerW:        power,
 			DriverVersion: record[9],
+
+			// 跨平台元数据：NVIDIA 独立显存，可分配预算等于空闲显存。
+			Vendor:               "NVIDIA",
+			Backend:              "CUDA",
+			MemoryType:           "dedicated",
+			MemoryAvailableMB:    free,
+			MemoryAvailableKnown: true,
 		}
 
 		gpus = append(gpus, gpu)

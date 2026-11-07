@@ -85,6 +85,21 @@ func New(cfg *config.Config) (*Agent, error) {
 	}, nil
 }
 
+// CollectOnce performs a single resource collection and returns the snapshot.
+// It is used by the collect-once mode to inspect node state without
+// starting the long-running collection and heartbeat loops.
+func (a *Agent) CollectOnce() (*Snapshot, error) {
+	if a == nil {
+		return nil, fmt.Errorf("agent cannot be nil")
+	}
+
+	if a.collector == nil {
+		return nil, fmt.Errorf("agent collector cannot be nil")
+	}
+
+	return a.collector.Collect()
+}
+
 // Run starts resource collection and heartbeat reporting.
 func (a *Agent) Run(ctx context.Context) error {
 	if a == nil {

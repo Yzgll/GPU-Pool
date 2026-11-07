@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"log"
 	"os"
@@ -14,10 +15,18 @@ import (
 	"gpu-pool/agent/internal/config"
 )
 
-var configPath = flag.String(
-	"config",
-	defaultConfigPath(),
-	"Path to the Agent configuration file",
+var (
+	configPath = flag.String(
+		"config",
+		defaultConfigPath(),
+		"Path to the Agent configuration file",
+	)
+
+	collectOnce = flag.Bool(
+		"collect-once",
+		false,
+		"Collect resources once, print the snapshot as JSON, and exit",
+	)
 )
 
 func defaultConfigPath() string {
@@ -52,6 +61,23 @@ func main() {
 	app, err := agent.New(cfg)
 	if err != nil {
 		log.Fatalf("Agent initialization failed: %v", err)
+	}
+
+	// 3.1 一次性采集模式：采集一次、打印 JSON、退出。
+	if *collectOnce {
+		snapshot, err := app.CollectOnce()
+		if err != nil {
+			log.Fatalf("Collect-once failed: %v", err)
+		}
+
+		data, err := json.MarshalIndent(snapshot, "", "  ")
+		if err != nil {
+			log.Fatalf("Marshal snapshot failed: %v", err)
+		}
+
+		os.Stdout.Write(data)
+		os.Stdout.WriteString("\n")
+		return
 	}
 
 	// 4. 监听退出信号，支持优雅退出

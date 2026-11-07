@@ -23,6 +23,7 @@ type GPU = {
   memory_total_mb: number;
   memory_used_mb: number;
   memory_free_mb: number;
+  memory_type?: string;
 };
 
 type SystemInfo = {
@@ -303,22 +304,32 @@ function App() {
                         <div className="gpu-details">
                           <div className="gpu-name">{gpu.name}</div>
                           <InfoRow
-                            label="显存使用"
+                            label={
+                              gpu.memory_type === "unified"
+                                ? "统一内存"
+                                : "显存使用"
+                            }
                             value={`${gpu.memory_used_mb} / ${gpu.memory_total_mb} MB`}
                           />
-                          <div className="progress-track">
-                            <div
-                              className="progress-fill"
-                              style={{
-                                width: `${Math.min(
-                                  100,
-                                  (gpu.memory_used_mb /
-                                    Math.max(gpu.memory_total_mb, 1)) *
+                          {gpu.memory_type === "unified" ? (
+                            <div className="unified-memory-note">
+                              统一内存，与 CPU 共享，无独立显存
+                            </div>
+                          ) : (
+                            <div className="progress-track">
+                              <div
+                                className="progress-fill"
+                                style={{
+                                  width: `${Math.min(
                                     100,
-                                )}%`,
-                              }}
-                            />
-                          </div>
+                                    (gpu.memory_used_mb /
+                                      Math.max(gpu.memory_total_mb, 1)) *
+                                      100,
+                                  )}%`,
+                                }}
+                              />
+                            </div>
+                          )}
                           <InfoRow
                             label="GPU 温度"
                             value={`${gpu.temperature} °C`}

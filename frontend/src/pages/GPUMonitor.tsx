@@ -11,6 +11,7 @@ type GPU = {
   memory_total_mb: number;
   memory_used_mb: number;
   memory_free_mb: number;
+  memory_type?: string;
 };
 type GPUDevice = {
   key: string;
@@ -191,7 +192,11 @@ export default function GPUMonitor({ nodes }: Props) {
                       </td>
                       <td>
                         {device.nodeStatus === "online"
-                          ? `${device.gpu.memory_used_mb} / ${device.gpu.memory_total_mb} MB`
+                          ? `${device.gpu.memory_used_mb} / ${device.gpu.memory_total_mb} MB${
+                              device.gpu.memory_type === "unified"
+                                ? "（统一内存）"
+                                : ""
+                            }`
                           : "—"}
                       </td>
                       <td>
@@ -235,7 +240,11 @@ export default function GPUMonitor({ nodes }: Props) {
                               </div>
 
                               <div className="gpu-monitor-stat">
-                                <span>显存使用</span>
+                                <span>
+                                  {device.gpu.memory_type === "unified"
+                                    ? "统一内存"
+                                    : "显存使用"}
+                                </span>
                                 <strong>
                                   {device.gpu.memory_used_mb} /{" "}
                                   {device.gpu.memory_total_mb} MB
